@@ -34,3 +34,16 @@ func symlinkTarget(_ url: URL) -> URL? {
     let p = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)
     return p.map { URL(fileURLWithPath: $0) }
 }
+
+@testable import StockpileCore
+
+/// Space checker whose answers the test controls.
+struct StubSpaceChecker: SpaceChecking {
+    var free: Int64
+    var measured: ((URL) throws -> Int64)?
+    func freeBytes(at url: URL) throws -> Int64 { free }
+    func size(of url: URL) throws -> Int64 {
+        if let measured { return try measured(url) }
+        return try DirStats.measure(url).totalBytes
+    }
+}
