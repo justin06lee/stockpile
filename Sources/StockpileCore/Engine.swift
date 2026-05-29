@@ -74,6 +74,46 @@ public struct Engine {
         return entry
     }
 
+    public func disintegrate(_ folder: URL, driveRoot: URL) throws {
+        let orig = folder.standardizedFileURL
+        var manifest = try store.load()
+        guard let idx = manifest.entries.firstIndex(where: { $0.original == orig.path }) else {
+            throw StockpileError.notIntegrated(orig)
+        }
+        let entry = manifest.entries[idx]
+        let dest = driveRoot.appendingPathComponent(entry.destRelative)
+
+        // drive data must be present
+        guard fm.fileExists(atPath: dest.path) else {
+            throw StockpileError.driveNotMounted
+        }
+
+        // internal must have room
+        let needed = try space.size(of: dest)
+        let available = try space.freeBytes(at: orig.deletingLastPathComponent())
+        if available < needed {
+            throw StockpileError.insufficientSpace(needed: needed, available: available)
+        }
+
+        // remove only the symlink (never its target)
+        if isSymlinkPath(orig) {
+            try fm.removeItem(at: orig)
+        }
+
+        // copy back + verify
+        try copier.copy(from: dest, to: orig)
+        guard try copier.verify(src: dest, dest: orig) else {
+            try? fm.removeItem(at: orig)
+            try? fm.createSymbolicLink(at: orig, withDestinationURL: dest)
+            throw StockpileError.verificationFailed(orig)
+        }
+
+        // success: drop drive copy + manifest entry
+        try fm.removeItem(at: dest)
+        manifest.entries.remove(at: idx)
+        try store.save(manifest)
+    }
+
     // MARK: - Helpers
 
     func isSymlinkPath(_ url: URL) -> Bool {

@@ -27,7 +27,11 @@ func makeTree(at root: URL, files: [String: String]) throws -> URL {
 }
 
 func isSymlink(_ url: URL) -> Bool {
-    (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+    // Use FileManager (live filesystem read) rather than URL.resourceValues,
+    // which caches per-URL-instance and can report a stale value when the same
+    // URL is queried before and after the on-disk type changes.
+    let attrs = try? FileManager.default.attributesOfItem(atPath: url.standardizedFileURL.path)
+    return (attrs?[.type] as? FileAttributeType) == .typeSymbolicLink
 }
 
 func symlinkTarget(_ url: URL) -> URL? {
