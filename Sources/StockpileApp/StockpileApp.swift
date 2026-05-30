@@ -1,12 +1,15 @@
-// Placeholder replaced in Task 14. Keeps the executable target compiling.
-@main
-struct StockpileApp {
-    static func main() {
-        print("Stockpile \(StockpileCoreVersionShim.version)")
-    }
-}
+import SwiftUI
 
-import StockpileCore
-enum StockpileCoreVersionShim {
-    static var version: String { Stockpile.version }
+@main
+struct StockpileApp: App {
+    @StateObject private var vm = ViewModel()
+
+    var body: some Scene {
+        MenuBarExtra("Stockpile", systemImage: vm.status.driveMounted
+                     ? "externaldrive.fill.badge.checkmark"
+                     : "externaldrive.badge.xmark") {
+            MenuView(vm: vm)
+        }
+        .menuBarExtraStyle(.window)
+    }
 }
