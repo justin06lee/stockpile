@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Copier {
+public struct Copier: Sendable {
     public init() {}
 
     public func copy(from src: URL, to dest: URL) throws {

@@ -44,7 +44,7 @@ func symlinkTarget(_ url: URL) -> URL? {
 /// Space checker whose answers the test controls.
 struct StubSpaceChecker: SpaceChecking {
     var free: Int64
-    var measured: ((URL) throws -> Int64)?
+    var measured: (@Sendable (URL) throws -> Int64)?
     func freeBytes(at url: URL) throws -> Int64 { free }
     func size(of url: URL) throws -> Int64 {
         if let measured { return try measured(url) }

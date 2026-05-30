@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ManifestStore {
+public struct ManifestStore: Sendable {
     public let url: URL
 
     public init(url: URL) { self.url = url }

@@ -1,13 +1,13 @@
 import Foundation
 
-public protocol SpaceChecking {
+public protocol SpaceChecking: Sendable {
     /// Free bytes available on the volume containing `url`.
     func freeBytes(at url: URL) throws -> Int64
     /// Total bytes of regular files under `url`.
     func size(of url: URL) throws -> Int64
 }
 
-public struct FileSystemSpaceChecker: SpaceChecking {
+public struct FileSystemSpaceChecker: SpaceChecking, Sendable {
     public init() {}
 
     public func freeBytes(at url: URL) throws -> Int64 {

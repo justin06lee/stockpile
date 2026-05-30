@@ -1,10 +1,10 @@
 import Foundation
 
-public struct Engine {
+public struct Engine: Sendable {
     let store: ManifestStore
     let copier: Copier
     let space: SpaceChecking
-    private let fm = FileManager.default
+    private var fm: FileManager { .default }
 
     public init(store: ManifestStore,
                 copier: Copier = Copier(),
