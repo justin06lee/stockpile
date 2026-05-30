@@ -114,6 +114,39 @@ public struct Engine {
         try store.save(manifest)
     }
 
+    /// Recover from a crash during the integrate swap window.
+    public func repair(driveRoot: URL) throws {
+        let manifest = try store.load()
+        for entry in manifest.entries {
+            let orig = URL(fileURLWithPath: entry.original)
+            let bak = backupURL(for: orig)
+            let dest = driveRoot.appendingPathComponent(entry.destRelative)
+
+            let bakExists = fm.fileExists(atPath: bak.path)
+            // path exists as a non-symlink? (fileExists follows links, so check type)
+            let origIsRealItem = fm.fileExists(atPath: orig.path) && !isSymlinkPath(orig)
+
+            guard bakExists, !origIsRealItem, !isSymlinkPath(orig) else { continue }
+
+            if fm.fileExists(atPath: dest.path) {
+                // copy had landed: finish the swap
+                try fm.createSymbolicLink(at: orig, withDestinationURL: dest)
+                try fm.removeItem(at: bak)
+            } else {
+                // copy never landed: roll the original back
+                try fm.moveItem(at: bak, to: orig)
+            }
+        }
+    }
+
+    public func status(driveMounted: Bool) throws -> Status {
+        let m = try store.load()
+        let freed = m.entries.reduce(Int64(0)) { $0 + $1.bytes }
+        return Status(driveMounted: driveMounted,
+                      stashedCount: m.entries.count,
+                      freedBytes: freed)
+    }
+
     // MARK: - Helpers
 
     func isSymlinkPath(_ url: URL) -> Bool {
