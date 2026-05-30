@@ -33,7 +33,19 @@ final class ViewModel: ObservableObject {
         return mount.appendingPathComponent(drive.stockpileSubdir, isDirectory: true)
     }
 
+    /// Recover any interrupted-swap leftovers on the configured drive. Safe + idempotent.
+    private func repairIfPossible() async {
+        guard let root = try? driveRoot() else { return }   // no drive / unplugged → nothing to do
+        let engine = self.engine
+        do {
+            try await Task.detached { try engine.repair(driveRoot: root) }.value
+        } catch {
+            report(error)
+        }
+    }
+
     func refresh() async {
+        await repairIfPossible()
         do {
             let manifest = try store.load()
             let mounted = (try driveRoot()) != nil
