@@ -26,6 +26,21 @@ public struct Engine: Sendable {
         if isSymlinkPath(src) { throw StockpileError.sourceIsSymlink(src) }
         guard isDir.boolValue else { throw StockpileError.notADirectory(src) }
 
+        // a folder on (or containing) the stockpile root must never be stashed
+        let root = driveRoot.standardizedFileURL
+        if src.path == root.path
+            || src.path.hasPrefix(root.path + "/")
+            || root.path.hasPrefix(src.path + "/") {
+            throw StockpileError.sourceInsideStockpile(src)
+        }
+
+        // a leftover backup would make the swap's rename fail after the copy;
+        // refuse up front (repair handles crash leftovers at launch)
+        let bak = backupURL(for: src)
+        if fm.fileExists(atPath: bak.path) {
+            throw StockpileError.destinationExists(bak)
+        }
+
         var manifest = try store.load()
         if manifest.entries.contains(where: { $0.original == src.path }) {
             throw StockpileError.alreadyIntegrated(src)
@@ -53,8 +68,12 @@ public struct Engine: Sendable {
         }
 
         // --- swap: rename original aside, symlink, then delete backup ---
-        let bak = backupURL(for: src)
-        try fm.moveItem(at: src, to: bak)
+        do {
+            try fm.moveItem(at: src, to: bak)
+        } catch {
+            try? fm.removeItem(at: dest)   // don't orphan the drive copy
+            throw error
+        }
         do {
             try fm.createSymbolicLink(at: src, withDestinationURL: dest)
         } catch {
@@ -82,6 +101,12 @@ public struct Engine: Sendable {
         }
         let entry = manifest.entries[idx]
         let dest = driveRoot.appendingPathComponent(entry.destRelative)
+
+        // the original path must be free (or our symlink): a real folder there is
+        // the user's data — restoring onto it would merge then delete it on rollback
+        if fm.fileExists(atPath: orig.path) && !isSymlinkPath(orig) {
+            throw StockpileError.destinationExists(orig)
+        }
 
         // drive data must be present
         guard fm.fileExists(atPath: dest.path) else {
@@ -125,6 +150,13 @@ public struct Engine: Sendable {
             let bakExists = fm.fileExists(atPath: bak.path)
             // path exists as a non-symlink? (fileExists follows links, so check type)
             let origIsRealItem = fm.fileExists(atPath: orig.path) && !isSymlinkPath(orig)
+
+            // swap completed but the backup was never deleted: reclaim the wasted
+            // space — only when the drive copy provably exists (bak is redundant)
+            if bakExists, isSymlinkPath(orig), fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: bak)
+                continue
+            }
 
             guard bakExists, !origIsRealItem, !isSymlinkPath(orig) else { continue }
 

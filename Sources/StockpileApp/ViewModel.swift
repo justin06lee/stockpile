@@ -8,6 +8,7 @@ final class ViewModel: ObservableObject {
     @Published var entries: [Entry] = []
     @Published var busy = false
     @Published var lastError: String?
+    @Published var repairNeeded = false
 
     private let store: ManifestStore
     private let locator: DriveLocating
@@ -23,6 +24,8 @@ final class ViewModel: ObservableObject {
         watcher.onMount = { [weak self] _ in Task { await self?.refresh() } }
         watcher.onUnmount = { [weak self] _ in Task { await self?.refresh() } }
         watcher.start()
+        // run repair + reflect real state immediately, not on first menu open
+        Task { await self.refresh() }
     }
 
     /// Absolute stockpile root for the configured drive, or nil if unplugged.
@@ -39,7 +42,9 @@ final class ViewModel: ObservableObject {
         let engine = self.engine
         do {
             try await Task.detached { try engine.repair(driveRoot: root) }.value
+            repairNeeded = false
         } catch {
+            repairNeeded = true
             report(error)
         }
     }
@@ -62,6 +67,12 @@ final class ViewModel: ObservableObject {
     func chooseDrive(_ volume: VolumeInfo) async {
         do {
             var manifest = try store.load()
+            if let current = manifest.drive, current.uuid != volume.uuid,
+               !manifest.entries.isEmpty {
+                lastError = "Disintegrate all stashed folders before switching drives — "
+                          + "they live on “\(current.name)”."
+                return
+            }
             manifest.drive = DriveRef(uuid: volume.uuid, name: volume.name)
             try store.save(manifest)
             await refresh()
@@ -93,6 +104,6 @@ final class ViewModel: ObservableObject {
     }
 
     private func report(_ error: Error) {
-        self.lastError = String(describing: error)
+        self.lastError = error.localizedDescription
     }
 }

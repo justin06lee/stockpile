@@ -49,7 +49,15 @@ struct MenuView: View {
             Text((entry.original as NSString).lastPathComponent)
             Spacer()
             Button("Disintegrate") {
-                Task { await vm.disintegrate(URL(fileURLWithPath: entry.original)) }
+                let name = (entry.original as NSString).lastPathComponent
+                let size = ByteCountFormatter.string(fromByteCount: entry.bytes,
+                                                     countStyle: .file)
+                if confirm("Bring “\(name)” back?",
+                           "\(size) will move back to this Mac and be removed "
+                           + "from the drive.",
+                           action: "Disintegrate") {
+                    Task { await vm.disintegrate(URL(fileURLWithPath: entry.original)) }
+                }
             }
             .disabled(vm.busy || !vm.status.driveMounted)
         }
@@ -68,12 +76,28 @@ struct MenuView: View {
     }
 
     private func stashFolder() {
+        NSApp.activate(ignoringOtherApps: true)   // accessory app: bring panel frontmost
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if confirm("Stash “\(url.lastPathComponent)” on the drive?",
+                   "The folder moves to the SSD; a link stays at\n\(url.path)\n"
+                   + "so apps keep finding it. Unplugging the drive makes it "
+                   + "unavailable until replugged.",
+                   action: "Stash") {
             Task { await vm.integrate(url) }
         }
+    }
+
+    private func confirm(_ message: String, _ info: String, action: String) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: action)
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }

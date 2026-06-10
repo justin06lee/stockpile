@@ -67,3 +67,22 @@ private func engine(_ dir: TempDir, free: Int64 = 1_000_000_000) -> Engine {
     #expect(FileManager.default.fileExists(
         atPath: driveRoot.appendingPathComponent("Movies/a").path))
 }
+
+@Test func disintegrateRefusesWhenOriginalIsARealFolder() throws {
+    let dir = try TempDir()
+    let src = try makeTree(at: dir.sub("Movies"), files: ["a": "1"])
+    let driveRoot = dir.sub("drive/Stockpile")
+    let e = engine(dir)
+    try e.integrate(src, driveRoot: driveRoot)
+    // user replaces the symlink with a real folder of their own
+    try FileManager.default.removeItem(at: src)
+    try makeTree(at: src, files: ["precious": "user data"])
+
+    #expect(throws: StockpileError.destinationExists(src.standardizedFileURL)) {
+        try e.disintegrate(src, driveRoot: driveRoot)
+    }
+    // user's folder untouched, drive copy intact
+    #expect(FileManager.default.fileExists(atPath: src.appendingPathComponent("precious").path))
+    #expect(FileManager.default.fileExists(
+        atPath: driveRoot.appendingPathComponent("Movies/a").path))
+}
