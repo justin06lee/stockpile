@@ -79,3 +79,42 @@ private func makeEngine(_ dir: TempDir, free: Int64 = 1_000_000_000) -> Engine {
     #expect(!isSymlink(src))
     #expect(FileManager.default.fileExists(atPath: src.appendingPathComponent("a").path))
 }
+
+@Test func integrateRefusesWhenStaleBackupExists() throws {
+    let dir = try TempDir()
+    let src = try makeTree(at: dir.sub("Movies"), files: ["a": "1"])
+    try makeTree(at: dir.sub("Movies.stockpile-bak"), files: ["old": "x"])
+    let engine = makeEngine(dir)
+    #expect(throws: StockpileError.self) {
+        try engine.integrate(src, driveRoot: dir.sub("drive/Stockpile"))
+    }
+    // nothing copied to the drive, source untouched
+    #expect(!FileManager.default.fileExists(atPath: dir.sub("drive/Stockpile/Movies").path))
+    #expect(FileManager.default.fileExists(atPath: src.appendingPathComponent("a").path))
+}
+
+@Test func integrateRejectsAlreadyIntegratedManifestEntry() throws {
+    let dir = try TempDir()
+    let src = try makeTree(at: dir.sub("Docs"), files: ["a": "1"])
+    let store = ManifestStore(url: dir.sub("manifest.json"))
+    var m = Manifest()
+    m.entries.append(Entry(original: src.standardizedFileURL.path, destRelative: "Docs",
+                           bytes: 1, integratedAt: Date(timeIntervalSince1970: 1)))
+    try store.save(m)
+    let engine = Engine(store: store, copier: Copier(), space: StubSpaceChecker(free: 1_000_000))
+    #expect(throws: StockpileError.alreadyIntegrated(src.standardizedFileURL)) {
+        try engine.integrate(src, driveRoot: dir.sub("drive/Stockpile"))
+    }
+}
+
+@Test func integrateRejectsFolderInsideTheStockpileRoot() throws {
+    let dir = try TempDir()
+    let driveRoot = dir.sub("drive/Stockpile")
+    let src = try makeTree(at: driveRoot.appendingPathComponent("Movies"), files: ["a": "1"])
+    let engine = makeEngine(dir)
+    #expect(throws: StockpileError.self) {
+        try engine.integrate(src, driveRoot: driveRoot)
+    }
+    // untouched, no symlink swap happened
+    #expect(!isSymlink(src))
+}

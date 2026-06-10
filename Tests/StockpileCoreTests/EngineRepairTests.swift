@@ -57,3 +57,41 @@ private func engine(_ dir: TempDir) -> Engine {
     let s = try engine(dir).status(driveMounted: true)
     #expect(s == Status(driveMounted: true, stashedCount: 2, freedBytes: 150))
 }
+
+@Test func repairReclaimsStaleBackupWhenSwapAlreadyComplete() throws {
+    let dir = try TempDir()
+    let orig = dir.sub("Movies")
+    let driveRoot = dir.sub("drive/Stockpile")
+    // crash AFTER symlink created, BEFORE bak removal
+    try makeTree(at: driveRoot.appendingPathComponent("Movies"), files: ["a": "1"])
+    try makeTree(at: dir.sub("Movies.stockpile-bak"), files: ["a": "1"])
+    try FileManager.default.createSymbolicLink(
+        at: orig, withDestinationURL: driveRoot.appendingPathComponent("Movies"))
+    var m = Manifest()
+    m.entries.append(Entry(original: orig.standardizedFileURL.path, destRelative: "Movies",
+                           bytes: 1, integratedAt: Date(timeIntervalSince1970: 1)))
+    try ManifestStore(url: dir.sub("manifest.json")).save(m)
+
+    try engine(dir).repair(driveRoot: driveRoot)
+
+    #expect(isSymlink(orig))   // healthy link untouched
+    #expect(!FileManager.default.fileExists(atPath: orig.path + ".stockpile-bak"))
+}
+
+@Test func repairKeepsBackupWhenSymlinkExistsButDriveDataMissing() throws {
+    let dir = try TempDir()
+    let orig = dir.sub("Movies")
+    let driveRoot = dir.sub("drive/Stockpile")
+    // symlink dangles (drive data gone) and bak is the ONLY copy — must NOT delete it
+    try makeTree(at: dir.sub("Movies.stockpile-bak"), files: ["a": "1"])
+    try FileManager.default.createSymbolicLink(
+        at: orig, withDestinationURL: driveRoot.appendingPathComponent("Movies"))
+    var m = Manifest()
+    m.entries.append(Entry(original: orig.standardizedFileURL.path, destRelative: "Movies",
+                           bytes: 1, integratedAt: Date(timeIntervalSince1970: 1)))
+    try ManifestStore(url: dir.sub("manifest.json")).save(m)
+
+    try engine(dir).repair(driveRoot: driveRoot)
+
+    #expect(FileManager.default.fileExists(atPath: orig.path + ".stockpile-bak"))
+}
