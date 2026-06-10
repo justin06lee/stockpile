@@ -12,7 +12,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "StockpileApp",
-            dependencies: ["StockpileCore"]
+            dependencies: ["StockpileCore"],
+            resources: [.process("Resources")]
         ),
     ]
 )
