@@ -80,14 +80,29 @@ struct MenuView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        if confirm("Stash “\(url.lastPathComponent)” on the drive?",
-                   "The folder moves to the SSD; a link stays at\n\(url.path)\n"
-                   + "so apps keep finding it. Unplugging the drive makes it "
-                   + "unavailable until replugged.",
-                   action: "Stash") {
-            Task { await vm.integrate(url) }
+        panel.allowsMultipleSelection = true   // ⇧-click / ⌘-click to pick several at once
+        panel.message = "Pick one or more folders — hold ⇧ or ⌘ to select several."
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        guard !urls.isEmpty else { return }
+
+        let title: String
+        let info: String
+        if urls.count == 1 {
+            let url = urls[0]
+            title = "Stash “\(url.lastPathComponent)” on the drive?"
+            info = "The folder moves to the SSD; a link stays at\n\(url.path)\n"
+                 + "so apps keep finding it. Unplugging the drive makes it "
+                 + "unavailable until replugged."
+        } else {
+            let names = urls.map { "• \($0.lastPathComponent)" }.joined(separator: "\n")
+            title = "Stash \(urls.count) folders on the drive?"
+            info = names + "\n\nEach folder moves to the SSD; a link stays behind so "
+                 + "apps keep finding it. Unplugging the drive makes them "
+                 + "unavailable until replugged."
+        }
+        if confirm(title, info, action: "Stash") {
+            Task { await vm.integrate(urls) }
         }
     }
 

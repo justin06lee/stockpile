@@ -83,9 +83,32 @@ final class ViewModel: ObservableObject {
         locator.mountedVolumes().filter { $0.url.path != "/" }
     }
 
-    func integrate(_ folder: URL) async { await run { engine, root in
-        try engine.integrate(folder, driveRoot: root)
-    } }
+    func integrate(_ folder: URL) async { await integrate([folder]) }
+
+    /// Stash several folders in one busy session. Keeps going if one fails and
+    /// reports an aggregate error for whichever didn't make it.
+    func integrate(_ folders: [URL]) async {
+        self.busy = true
+        self.lastError = nil
+        do {
+            guard let root = try driveRoot() else { throw StockpileError.driveNotMounted }
+            let engine = self.engine
+            var failures: [String] = []
+            for folder in folders {
+                do {
+                    try await Task.detached { _ = try engine.integrate(folder, driveRoot: root) }.value
+                } catch {
+                    failures.append("“\(folder.lastPathComponent)” — \(error.localizedDescription)")
+                }
+            }
+            await refresh()
+            if !failures.isEmpty {
+                self.lastError = "Couldn't stash \(failures.count) of \(folders.count): "
+                               + failures.joined(separator: "; ")
+            }
+        } catch { report(error) }
+        self.busy = false
+    }
 
     func disintegrate(_ original: URL) async { await run { engine, root in
         try engine.disintegrate(original, driveRoot: root)
