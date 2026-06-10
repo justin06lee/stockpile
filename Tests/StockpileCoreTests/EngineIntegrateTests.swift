@@ -118,3 +118,18 @@ private func makeEngine(_ dir: TempDir, free: Int64 = 1_000_000_000) -> Engine {
     // untouched, no symlink swap happened
     #expect(!isSymlink(src))
 }
+
+@Test func integrateCleansBackupContainingWriteProtectedDirs() throws {
+    let dir = try TempDir()
+    let src = try makeTree(at: dir.sub("Game"), files: ["assets/sprite.png": "x", "a": "1"])
+    // write-protect a subdir (mimics godot/go-module style trees)
+    let assets = src.appendingPathComponent("assets")
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: assets.path)
+    let engine = makeEngine(dir)
+    try engine.integrate(src, driveRoot: dir.sub("drive/Stockpile"))
+    #expect(isSymlink(src))
+    #expect(!FileManager.default.fileExists(atPath: src.path + ".stockpile-bak"))
+    // restore perms on the drive copy so TempDir cleanup works
+    try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+        ofItemAtPath: dir.sub("drive/Stockpile/Game/assets").path)
+}

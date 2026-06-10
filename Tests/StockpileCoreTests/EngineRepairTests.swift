@@ -95,3 +95,24 @@ private func engine(_ dir: TempDir) -> Engine {
 
     #expect(FileManager.default.fileExists(atPath: orig.path + ".stockpile-bak"))
 }
+
+@Test func repairReclaimsWriteProtectedBackup() throws {
+    let dir = try TempDir()
+    let orig = dir.sub("Game")
+    let driveRoot = dir.sub("drive/Stockpile")
+    try makeTree(at: driveRoot.appendingPathComponent("Game"), files: ["a": "1"])
+    let bak = try makeTree(at: dir.sub("Game.stockpile-bak"),
+                           files: ["assets/sprite.png": "x"])
+    try FileManager.default.setAttributes([.posixPermissions: 0o555],
+        ofItemAtPath: bak.appendingPathComponent("assets").path)
+    try FileManager.default.createSymbolicLink(
+        at: orig, withDestinationURL: driveRoot.appendingPathComponent("Game"))
+    var m = Manifest()
+    m.entries.append(Entry(original: orig.standardizedFileURL.path, destRelative: "Game",
+                           bytes: 1, integratedAt: Date(timeIntervalSince1970: 1)))
+    try ManifestStore(url: dir.sub("manifest.json")).save(m)
+
+    try engine(dir).repair(driveRoot: driveRoot)
+
+    #expect(!FileManager.default.fileExists(atPath: orig.path + ".stockpile-bak"))
+}

@@ -63,7 +63,7 @@ public struct Engine: Sendable {
         // --- copy + verify (original still intact) ---
         try copier.copy(from: src, to: dest)
         guard try copier.verify(src: src, dest: dest) else {
-            try? fm.removeItem(at: dest)
+            try? forceRemove(dest)
             throw StockpileError.verificationFailed(src)
         }
 
@@ -71,17 +71,17 @@ public struct Engine: Sendable {
         do {
             try fm.moveItem(at: src, to: bak)
         } catch {
-            try? fm.removeItem(at: dest)   // don't orphan the drive copy
+            try? forceRemove(dest)   // don't orphan the drive copy
             throw error
         }
         do {
             try fm.createSymbolicLink(at: src, withDestinationURL: dest)
         } catch {
             try? fm.moveItem(at: bak, to: src)   // roll back
-            try? fm.removeItem(at: dest)
+            try? forceRemove(dest)
             throw error
         }
-        try? fm.removeItem(at: bak)
+        try? forceRemove(bak)
 
         // --- record ---
         let entry = Entry(original: src.path,
@@ -134,7 +134,7 @@ public struct Engine: Sendable {
         }
 
         // success: drop drive copy + manifest entry
-        try fm.removeItem(at: dest)
+        try forceRemove(dest)
         manifest.entries.remove(at: idx)
         try store.save(manifest)
     }
@@ -154,7 +154,7 @@ public struct Engine: Sendable {
             // swap completed but the backup was never deleted: reclaim the wasted
             // space — only when the drive copy provably exists (bak is redundant)
             if bakExists, isSymlinkPath(orig), fm.fileExists(atPath: dest.path) {
-                try fm.removeItem(at: bak)
+                try forceRemove(bak)
                 continue
             }
 
@@ -163,7 +163,7 @@ public struct Engine: Sendable {
             if fm.fileExists(atPath: dest.path) {
                 // copy had landed: finish the swap
                 try fm.createSymbolicLink(at: orig, withDestinationURL: dest)
-                try fm.removeItem(at: bak)
+                try forceRemove(bak)
             } else {
                 // copy never landed: roll the original back
                 try fm.moveItem(at: bak, to: orig)
@@ -180,6 +180,30 @@ public struct Engine: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// Remove a tree we own, forcing owner-write onto entries that block
+    /// deletion (write-protected dirs in godot/go-module style trees).
+    func forceRemove(_ url: URL) throws {
+        do { try fm.removeItem(at: url); return } catch {}
+        makeTreeDeletable(url)
+        try fm.removeItem(at: url)
+    }
+
+    private func makeTreeDeletable(_ url: URL) {
+        func unlock(_ u: URL) {
+            try? fm.setAttributes([.immutable: false], ofItemAtPath: u.path)
+            if let perms = (try? fm.attributesOfItem(atPath: u.path))?[.posixPermissions]
+                as? NSNumber {
+                try? fm.setAttributes(
+                    [.posixPermissions: NSNumber(value: perms.uint16Value | 0o200)],
+                    ofItemAtPath: u.path)
+            }
+        }
+        unlock(url)
+        if let en = fm.enumerator(at: url, includingPropertiesForKeys: nil) {
+            for case let f as URL in en { unlock(f) }
+        }
+    }
 
     func isSymlinkPath(_ url: URL) -> Bool {
         let attrs = try? fm.attributesOfItem(atPath: url.path)
