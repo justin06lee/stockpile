@@ -86,3 +86,23 @@ private func engine(_ dir: TempDir, free: Int64 = 1_000_000_000) -> Engine {
     #expect(FileManager.default.fileExists(
         atPath: driveRoot.appendingPathComponent("Movies/a").path))
 }
+
+@Test func disintegrateRemovesWriteProtectedDriveCopy() throws {
+    let dir = try TempDir()
+    let src = try makeTree(at: dir.sub("Game"), files: ["assets/sprite.png": "x", "a": "1"])
+    let driveRoot = dir.sub("drive/Stockpile")
+    let e = engine(dir)
+    try e.integrate(src, driveRoot: driveRoot)
+    // ditto preserved perms; protect the drive copy's subdir explicitly
+    try FileManager.default.setAttributes([.posixPermissions: 0o555],
+        ofItemAtPath: driveRoot.appendingPathComponent("Game/assets").path)
+
+    try e.disintegrate(src, driveRoot: driveRoot)
+
+    #expect(!isSymlink(src))
+    #expect(FileManager.default.fileExists(atPath: src.appendingPathComponent("a").path))
+    #expect(!FileManager.default.fileExists(atPath: driveRoot.appendingPathComponent("Game").path))
+    #expect(try ManifestStore(url: dir.sub("manifest.json")).load().entries.isEmpty)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+        ofItemAtPath: src.appendingPathComponent("assets").path)
+}
